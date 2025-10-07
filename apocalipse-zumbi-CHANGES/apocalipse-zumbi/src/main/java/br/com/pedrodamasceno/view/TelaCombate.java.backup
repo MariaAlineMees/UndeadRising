@@ -1,0 +1,583 @@
+package br.com.pedrodamasceno.view;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridLayout;
+import java.util.List;
+
+import javax.swing.BorderFactory;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+
+import br.com.pedrodamasceno.controller.ControladorJogo;
+import br.com.pedrodamasceno.model.ModeloJogo;
+import br.com.pedrodamasceno.model.combate.SistemaCombate;
+import br.com.pedrodamasceno.model.itens.Arma;
+import br.com.pedrodamasceno.model.itens.ArmaDeFogo;
+import br.com.pedrodamasceno.model.itens.Item; // Importar Arma
+import br.com.pedrodamasceno.model.zumbis.Zumbi; // Adicionar import para Mapa, se não estiver presente
+
+public class TelaCombate extends JDialog {
+    private final ModeloJogo modelo;
+    private final SistemaCombate sistema;
+    private final JTextArea areaLog;
+    private final JComboBox<String> comboAlvos;
+    private final JButton btnBasico, btnHab1, btnHab2, btnUsarItem, btnFugir;
+    private final JLabel lblJogador, lblAlvo, lblCargas;
+    private JLabel lblArmaStatus; // Novo JLabel para o status da arma equipada
+    private boolean combateEmAndamento = false;
+    private JProgressBar barraVidaJogador;
+
+    public TelaCombate(JFrame parent, ModeloJogo modelo, List<Zumbi> inimigos) {
+        super(parent, "COMBATE", true); // Título em maiúsculo
+        this.modelo = modelo;
+        this.sistema = new SistemaCombate(modelo.getJogador(), inimigos);
+        modelo.setEmCombate(true);
+        modelo.setInimigosAtuais(inimigos);
+
+        setSize(700, 550); // Tamanho aumentado
+        setLayout(new BorderLayout());
+        setLocationRelativeTo(parent);
+        getContentPane().setBackground(Color.BLACK);
+
+        // topo: status com fontes maiores
+        JPanel topo = new JPanel(new GridLayout(3,1));
+        topo.setBackground(Color.BLACK);
+        topo.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        Font statusFont = new Font("Arial", Font.BOLD, 16); // Fonte maior
+        lblJogador = new JLabel("Jogador: " + modelo.getJogador().getSaude() + "/" + modelo.getJogador().getSaudeMaxima());
+        lblJogador.setFont(statusFont);
+        lblJogador.setForeground(Color.RED);
+
+        barraVidaJogador = new JProgressBar(0, 100);
+        barraVidaJogador.setStringPainted(true);
+        barraVidaJogador.setBackground(Color.DARK_GRAY);
+        barraVidaJogador.setForeground(Color.CYAN); // Cor diferente para o jogador em combate
+        barraVidaJogador.setBorder(BorderFactory.createLineBorder(Color.RED, 1));
+        barraVidaJogador.setPreferredSize(new Dimension(200, 20));
+
+        lblAlvo = new JLabel("Alvo: -");
+        lblAlvo.setFont(statusFont);
+        lblAlvo.setForeground(Color.RED);
+
+        lblCargas = new JLabel("Cargas H1=" + modelo.getJogador().getCargasHabilidade1() + " H2=" + modelo.getJogador().getCargasHabilidade2());
+        lblCargas.setFont(statusFont);
+        lblCargas.setForeground(Color.RED);
+
+        lblArmaStatus = new JLabel("Arma: Nenhuma"); // Inicializa o label da arma
+        lblArmaStatus.setFont(statusFont);
+        lblArmaStatus.setForeground(Color.RED);
+
+        topo.add(lblJogador);
+        topo.add(barraVidaJogador); // Adicionando a barra de vida do jogador
+        topo.add(lblAlvo);
+        topo.add(lblCargas);
+        topo.add(lblArmaStatus); // Adicionando o label do status da arma
+        add(topo, BorderLayout.NORTH);
+
+        // centro: log e alvos com fontes maiores
+        areaLog = new JTextArea();
+        areaLog.setEditable(false);
+        areaLog.setFont(new Font("Arial", Font.BOLD, 16)); // Fonte maior
+        areaLog.setBackground(new Color(20, 20, 20));
+        areaLog.setForeground(Color.WHITE);
+        areaLog.setCaretColor(Color.WHITE);
+        areaLog.setRows(15); // Definir número de linhas
+        JScrollPane scroll = new JScrollPane(areaLog);
+        scroll.setPreferredSize(new Dimension(0, 300)); // Altura fixa para o log
+
+        comboAlvos = new JComboBox<>();
+        comboAlvos.setFont(new Font("Arial", Font.BOLD, 16)); // Fonte maior
+        comboAlvos.setBackground(new Color(20, 20, 20));
+        comboAlvos.setForeground(Color.BLACK);
+        atualizarListaAlvos();
+        comboAlvos.addActionListener(e -> {
+            int idx = comboAlvos.getSelectedIndex();
+            if (idx >= 0) {
+                sistema.setAlvoIndex(idx);
+            }
+            atualizarStatus();
+        });
+
+        JPanel centro = new JPanel(new BorderLayout(10, 10)); // Adicionar espaçamento
+        centro.setBackground(Color.BLACK);
+        centro.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JLabel lblAlvos = new JLabel("ALVOS:");
+        lblAlvos.setFont(new Font("Arial", Font.BOLD, 14));
+        lblAlvos.setForeground(Color.RED);
+        
+        JLabel lblLog = new JLabel("LOG DO COMBATE:");
+        lblLog.setFont(new Font("Arial", Font.BOLD, 14));
+        lblLog.setForeground(Color.RED);
+        
+        // Painel para alvos (norte)
+        JPanel painelAlvos = new JPanel(new BorderLayout());
+        painelAlvos.setBackground(Color.BLACK);
+        painelAlvos.add(lblAlvos, BorderLayout.NORTH);
+        painelAlvos.add(comboAlvos, BorderLayout.CENTER);
+        
+        // Painel para log (centro)
+        JPanel painelLog = new JPanel(new BorderLayout());
+        painelLog.setBackground(Color.BLACK);
+        painelLog.add(lblLog, BorderLayout.NORTH);
+        painelLog.add(scroll, BorderLayout.CENTER);
+        
+        centro.add(painelAlvos, BorderLayout.NORTH);
+        centro.add(painelLog, BorderLayout.CENTER);
+        add(centro, BorderLayout.CENTER);
+
+        // baixo: ações com botões maiores
+        JPanel baixo = new JPanel(new BorderLayout());
+        baixo.setBackground(Color.BLACK);
+        baixo.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JPanel botoes = new JPanel(new GridLayout(1,5,10,10)); // Espaçamento aumentado para 5 botões
+        botoes.setBackground(Color.BLACK);
+
+        btnBasico = new JButton("ATAQUE BÁSICO");
+        btnHab1 = new JButton("HABILIDADE 1");
+        btnHab2 = new JButton("HABILIDADE 2");
+        btnUsarItem = new JButton("USAR ITEM");
+        btnFugir = new JButton("FUGIR");
+
+        // Estilizar botões com tamanho maior
+        estiloBotaoCombateGrande(btnBasico);
+        estiloBotaoCombateGrande(btnHab1);
+        estiloBotaoCombateGrande(btnHab2);
+        estiloBotaoCombateGrande(btnUsarItem);
+        estiloBotaoCombateGrande(btnFugir);
+
+        botoes.add(btnBasico);
+        botoes.add(btnHab1);
+        botoes.add(btnHab2);
+        botoes.add(btnUsarItem);
+        botoes.add(btnFugir);
+
+        btnBasico.addActionListener(e -> executarAcao(0));
+        btnHab1.addActionListener(e -> executarAcao(1));
+        btnHab2.addActionListener(e -> executarAcao(2));
+        btnUsarItem.addActionListener(e -> mostrarSelecaoItemCombate());
+        btnFugir.addActionListener(e -> tentarFugir());
+
+        baixo.add(botoes, BorderLayout.NORTH);
+
+        add(baixo, BorderLayout.SOUTH);
+
+        atualizarStatus();
+        configurarBotoesHabilidades();
+        
+        // MOSTRAR INIMIGOS NO INÍCIO DO COMBATE
+        mostrarInicioCombate();
+
+        // Adicionar WindowListener para resetar emCombate ao fechar a janela
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                if (modelo.isEmCombate()) { // Apenas se ainda estiver em combate (pode ter sido finalizado de outra forma)
+                    modelo.setEmCombate(false);
+                    modelo.concluirExploracao(); // Adicionar para concluir a exploração e avançar período
+                    ((TelaPrincipal) getParent()).atualizarInterface(); // Atualiza a tela principal
+                }
+                dispose();
+            }
+        });
+    }
+
+    private void mostrarInicioCombate() {
+        appendLog("=== INÍCIO DO COMBATE ===");
+        List<Zumbi> inimigos = modelo.getInimigosAtuais();
+        if (inimigos == null || inimigos.isEmpty()) {
+            appendLog("Erro: Nenhum inimigo encontrado!");
+            return;
+        }
+        
+        int numInimigos = inimigos.size();
+        if (numInimigos == 1) {
+            appendLog("Você encontrou 1 inimigo!");
+        } else {
+            appendLog("Você encontrou " + numInimigos + " inimigos!");
+        }
+        
+        for (int i = 0; i < inimigos.size(); i++) {
+            Zumbi zumbi = inimigos.get(i);
+            appendLog((i+1) + ". " + zumbi.getNome() + " - " + zumbi.getSaude() + " HP");
+        }
+        
+        appendLog("Escolha sua ação!");
+        appendLog("========================");
+    }
+
+    private void estiloBotaoCombateGrande(JButton botao) {
+        botao.setFont(new Font("Arial", Font.BOLD, 14)); // Fonte maior
+        botao.setBackground(new Color(30, 30, 30)); // Cinza escuro
+        botao.setForeground(Color.RED);
+        botao.setFocusPainted(false);
+        botao.setBorder(BorderFactory.createLineBorder(Color.RED, 2));
+        botao.setPreferredSize(new Dimension(160, 45)); // Botões maiores
+
+        // Efeito hover
+        botao.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                botao.setBackground(new Color(60, 0, 0));
+                botao.setForeground(Color.WHITE);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                botao.setBackground(new Color(30, 30, 30));
+                botao.setForeground(Color.RED);
+            }
+        });
+    }
+
+    // Resto dos métodos permanecem iguais...
+    private void configurarBotoesHabilidades() {
+        btnHab1.setToolTipText(modelo.getJogador().getDescricaoHabilidade1());
+        btnHab2.setToolTipText(modelo.getJogador().getDescricaoHabilidade2());
+
+        btnHab1.setText("HAB 1 (" + modelo.getJogador().getCargasHabilidade1() + ")");
+        btnHab2.setText("HAB 2 (" + modelo.getJogador().getCargasHabilidade2() + ")");
+        
+        // Desabilitar botões quando não há cargas
+        btnHab1.setEnabled(modelo.getJogador().getCargasHabilidade1() > 0);
+        btnHab2.setEnabled(modelo.getJogador().getCargasHabilidade2() > 0);
+        
+        // Tooltip para o botão de fugir
+        if (modelo.isEventoFinalAtivo()) {
+            btnFugir.setToolTipText("Não é possível fugir do Boss final no Dia 7.");
+        } else {
+            btnFugir.setToolTipText("Tentar fugir do combate. Chance baseada na sua destreza.");
+        }
+    }
+
+    private void executarAcao(int tipoAtaque) {
+        if (combateEmAndamento) return; // Evitar múltiplas ações simultâneas
+        
+        combateEmAndamento = true;
+        desabilitarBotoes();
+        
+        // Executar em thread separada para não travar a UI
+        new Thread(() -> {
+            try {
+                ControladorJogo controller = new ControladorJogo((TelaPrincipal)getParent());
+                controller.executarTurnoCombate(sistema, tipoAtaque, this);
+                
+                // Delay de 1 segundo antes de reabilitar os botões
+                Thread.sleep(1000);
+                
+                SwingUtilities.invokeLater(() -> {
+                    atualizarStatus();
+                    configurarBotoesHabilidades();
+                    habilitarBotoes();
+                    combateEmAndamento = false;
+                });
+                
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+    
+    private void desabilitarBotoes() {
+        btnBasico.setEnabled(false);
+        btnHab1.setEnabled(false);
+        btnHab2.setEnabled(false);
+        btnUsarItem.setEnabled(false);
+        btnFugir.setEnabled(false);
+    }
+    
+    private void tentarFugir() {
+        if (combateEmAndamento) return; // Evitar múltiplas ações simultâneas
+        // Bloquear fuga no evento final (Dia 7)
+        if (modelo.isEventoFinalAtivo()) {
+            appendLog(">>> NÃO É POSSÍVEL FUGIR! <<<");
+            appendLog("Você não pode fugir do Boss final no Dia 7!");
+            javax.swing.JOptionPane.showMessageDialog(this,
+                    "Não é possível fugir do Boss final no Dia 7.",
+                    "Fuga bloqueada",
+                    javax.swing.JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        combateEmAndamento = true;
+        desabilitarBotoes();
+        
+        // Executar em thread separada para não travar a UI
+        new Thread(() -> {
+            try {
+                // Calcular chance de fuga baseada na destreza
+                int destreza = modelo.getJogador().getDestreza();
+                int chanceFuga = Math.min(80, 30 + (destreza * 5)); // Base 30% + 5% por ponto de destreza, máximo 80%
+                
+                appendLog(">>> TENTANDO FUGIR <<<");
+                appendLog("Sua destreza: " + destreza + " (Chance de fuga: " + chanceFuga + "%)");
+                
+                // Delay para suspense
+                Thread.sleep(1000);
+                
+                // Simular tentativa de fuga
+                int resultado = new java.util.Random().nextInt(100);
+                if (resultado < chanceFuga) {
+                    appendLog(">>> FUGA BEM-SUCEDIDA! <<<");
+                    appendLog("Você conseguiu escapar do combate!");
+                    
+                    // Delay antes de fechar
+                    Thread.sleep(1500);
+                    
+                    modelo.getJogador().atualizarSentimentoJogador(1); // Sentimento positivo pela fuga
+
+                    SwingUtilities.invokeLater(() -> {
+                        modelo.setEmCombate(false);
+                        // Concluir a exploração do período após fugir com sucesso
+                        dispose();
+                    });
+                } else {
+                    appendLog(">>> FUGA FALHOU! <<<");
+                    appendLog("Os inimigos te impediram de fugir!");
+                    
+                    // Delay antes de reabilitar os botões
+                    Thread.sleep(1000);
+                    
+                    modelo.getJogador().atualizarSentimentoJogador(-1); // Sentimento negativo pela falha na fuga
+
+                    SwingUtilities.invokeLater(() -> {
+                        habilitarBotoes();
+                        combateEmAndamento = false;
+                    });
+                }
+                
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+    
+    private void habilitarBotoes() {
+        btnBasico.setEnabled(true);
+        btnHab1.setEnabled(true);
+        btnHab2.setEnabled(true);
+        btnUsarItem.setEnabled(modelo.getJogador().getInventario() != null && !modelo.getJogador().getInventario().getItens().isEmpty());
+        btnFugir.setEnabled(true);
+    }
+
+    private void mostrarSelecaoItemCombate() {
+        if (modelo.getJogador().getInventario().getItens().isEmpty()) {
+            appendLog("Você não tem itens para usar!");
+            return;
+        }
+
+        JDialog dialog = new JDialog(this, "Usar Item no Combate", true);
+        dialog.setLayout(new BorderLayout());
+        dialog.setSize(500, 350); // Tamanho aumentado
+        dialog.setLocationRelativeTo(this);
+        dialog.getContentPane().setBackground(Color.BLACK);
+
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        // Filtrar itens para mostrar apenas os que podem ser usados em combate
+        List<Item> itensDisponiveis = modelo.getJogador().getInventario().getItens().stream()
+                .filter(item -> {
+                    switch (item.getTipo()) {
+                        case COMIDA:
+                        case MEDICAMENTO:
+                        case EXPLOSIVO:
+                        case MUNICAO:
+                        case ARMA: // Permitir armas no menu de uso em combate
+                        case ARMADURA: // Permitir armaduras no menu de uso em combate
+                            return true;
+                        case UTILIDADE:
+                            // Permitir apenas Mapa e Lanterna Tática para uso em combate
+                            return item instanceof br.com.pedrodamasceno.model.itens.Mapa || item instanceof br.com.pedrodamasceno.model.itens.LanternaTatica;
+                        default:
+                            return false;
+                    }
+                })
+                .toList();
+                
+        for (int i = 0; i < itensDisponiveis.size(); i++) {
+            Item item = itensDisponiveis.get(i);
+            String acao = "Usar:";
+            String infoExtra = "";
+
+            if (item.getTipo() == br.com.pedrodamasceno.model.itens.TipoItem.ARMA || item.getTipo() == br.com.pedrodamasceno.model.itens.TipoItem.ARMADURA) {
+                acao = "Equipar:";
+            } else if (item.getTipo() == br.com.pedrodamasceno.model.itens.TipoItem.MUNICAO) {
+                infoExtra = " (x" + item.getValor() + ")"; // Munição tem 'valor' como quantidade
+            }
+            listModel.addElement((i + 1) + ". " + acao + " " + item.getNome() + infoExtra + " - " + item.getDescricao());
+        }
+
+        JList<String> lista = new JList<>(listModel);
+        lista.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        lista.setFont(new Font("Arial", Font.BOLD, 12)); // Fonte maior
+        lista.setBackground(new Color(20, 20, 20));
+        lista.setForeground(Color.WHITE);
+        lista.setSelectionBackground(new Color(80, 0, 0));
+        lista.setSelectionForeground(Color.WHITE);
+
+        JButton btnUsar = new JButton("USAR ITEM");
+        btnUsar.setFont(new Font("Arial", Font.BOLD, 14));
+        btnUsar.setBackground(new Color(30, 30, 30));
+        btnUsar.setForeground(Color.RED);
+        btnUsar.setBorder(BorderFactory.createLineBorder(Color.RED, 2));
+        btnUsar.setPreferredSize(new Dimension(120, 40));
+        btnUsar.addActionListener(e -> {
+            int indice = lista.getSelectedIndex();
+            if (indice != -1) {
+                Item itemSelecionado = modelo.getJogador().getInventario().getItens().get(indice);
+                ControladorJogo controller = new ControladorJogo((TelaPrincipal)getParent());
+                controller.usarItemCombate(itemSelecionado, sistema, this);
+                dialog.dispose();
+            } else {
+                JOptionPane.showMessageDialog(dialog, "Selecione um item primeiro!");
+            }
+        });
+
+        dialog.add(new JScrollPane(lista), BorderLayout.CENTER);
+
+        JPanel painelBotao = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        painelBotao.setBackground(Color.BLACK);
+        painelBotao.add(btnUsar);
+        dialog.add(painelBotao, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
+    }
+
+    public void atualizarListaAlvos() {
+        comboAlvos.removeAllItems();
+        List<Zumbi> inimigos = modelo.getInimigosAtuais();
+        if (inimigos == null || inimigos.isEmpty()) {
+            comboAlvos.addItem("NENHUM");
+        } else {
+            for (int i = 0; i < inimigos.size(); i++) {
+                Zumbi z = inimigos.get(i);
+                if (z.estaVivo()) {
+                    comboAlvos.addItem((i+1) + " - " + z.getNome() + " (" + z.getSaude() + " HP)");
+                }
+            }
+        }
+        if (comboAlvos.getItemCount() > 0) {
+            comboAlvos.setSelectedIndex(0);
+            // Atualizar o alvo atual no sistema de combate
+            sistema.setAlvoIndex(0);
+        }
+        // CORREÇÃO: Forçar a cor preta para o texto do combobox
+        comboAlvos.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (c instanceof JLabel) {
+                    JLabel label = (JLabel) c;
+                    label.setForeground(Color.BLACK); // Texto preto
+                    label.setFont(new Font("Arial", Font.BOLD, 14)); // Negrito e maior
+                    label.setBackground(isSelected ? new Color(200, 0, 0) : Color.WHITE); // Fundo branco ou vermelho quando selecionado
+                }
+                return c;
+            }
+        });
+    }
+
+    public void appendLog(String linha) {
+        // Destacar mensagens importantes
+        if (linha.contains("=== INÍCIO DO COMBATE ===") || linha.contains("========================")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else if (linha.contains("ATAQUE BÁSICO") || linha.contains("HABILIDADE")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else if (linha.contains("foi derrotado") || linha.contains("DERROTOU")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else if (linha.contains("atacou causando")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else if (linha.contains("causando") && linha.contains("de dano")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else if (linha.contains("Sua vez: escolha a ação")) {
+            areaLog.append(">>> " + linha + " <<<\n");
+        } else {
+            areaLog.append(linha + "\n");
+        }
+        areaLog.setCaretPosition(areaLog.getDocument().getLength());
+    }
+
+    public void atualizarStatus() {
+        lblJogador.setText("Jogador: " + modelo.getJogador().getSaude() + "/" + modelo.getJogador().getSaudeMaxima());
+        barraVidaJogador.setMaximum(modelo.getJogador().getSaudeMaxima());
+        barraVidaJogador.setValue(modelo.getJogador().getSaude());
+
+        // NOVO: Lógica para mudar a cor da barra de vida com base na porcentagem
+        double porcentagemVida = (double) modelo.getJogador().getSaude() / modelo.getJogador().getSaudeMaxima();
+        if (porcentagemVida > 0.70) {
+            barraVidaJogador.setForeground(Color.GREEN);
+        } else if (porcentagemVida >= 0.30) {
+            barraVidaJogador.setForeground(Color.ORANGE); // Ou Color.YELLOW para um alerta intermediário
+        } else {
+            barraVidaJogador.setForeground(Color.RED);
+        }
+
+        lblCargas.setText("Cargas H1=" + modelo.getJogador().getCargasHabilidade1() + " H2=" + modelo.getJogador().getCargasHabilidade2());
+
+        Zumbi alvoAtual = null;
+        List<Zumbi> inimigos = modelo.getInimigosAtuais();
+        int inimigosVivos = 0;
+        
+        if (inimigos != null) {
+            for (Zumbi z : inimigos) {
+                if (z.estaVivo()) {
+                    inimigosVivos++;
+                    if (alvoAtual == null) {
+                        alvoAtual = z;
+                    }
+                }
+            }
+        }
+
+        if (alvoAtual != null) {
+            lblAlvo.setText("Alvo: " + alvoAtual.getNome() + " - " + alvoAtual.getSaude() + " HP (Restam: " + inimigosVivos + ")");
+        } else {
+            lblAlvo.setText("Alvo: -");
+        }
+
+        // Atualizar status da arma equipada
+        if (modelo.getJogador().getArmaEquipada() != null) {
+            Arma armaEquipada = modelo.getJogador().getArmaEquipada();
+            String statusArma = armaEquipada.getNome() + " (Dano: " + armaEquipada.getDano();
+            if (armaEquipada instanceof ArmaDeFogo) {
+                statusArma += ", Munição: " + ((ArmaDeFogo) armaEquipada).getMunicao();
+            } else {
+                statusArma += ", Durabilidade: " + armaEquipada.getDurabilidade();
+            }
+            statusArma += ")";
+            lblArmaStatus.setText("Arma: " + statusArma);
+        } else {
+            lblArmaStatus.setText("Arma: Nenhuma equipada");
+        }
+
+        atualizarListaAlvos();
+        configurarBotoesHabilidades();
+
+        // Atualizar estado do botão de itens
+        btnUsarItem.setEnabled(modelo.getJogador().getInventario() != null && !modelo.getJogador().getInventario().getItens().isEmpty());
+        
+        // Botão de fugir sempre disponível durante o combate
+        btnFugir.setEnabled(true);
+    }
+
+    public void setMensagem(String mensagem) {
+        appendLog(mensagem);
+    }
+}
